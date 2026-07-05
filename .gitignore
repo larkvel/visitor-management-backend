@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.env.local
+*.swp
+*.swo
+*~
+.DS_Store
