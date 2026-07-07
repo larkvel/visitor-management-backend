@@ -98,3 +98,62 @@ export async function updateCompany(id, input) {
 }
 
 export async function getPlatformDashboard() {
+  const result = await query(
+    `
+      SELECT
+        COUNT(*)::int AS companies,
+        COUNT(*) FILTER (WHERE account_status = 'active')::int AS active_companies,
+        (SELECT COUNT(*)::int FROM app_users WHERE company_id IS NOT NULL) AS company_users,
+        (SELECT COUNT(*)::int FROM visits) AS visits
+      FROM companies
+    `
+  );
+
+  return result.rows[0];
+}
+
+export async function listHosts(companyId) {
+  const result = await query(
+    `
+      SELECT id, full_name, email, department
+      FROM hosts
+      WHERE company_id = $1
+      ORDER BY full_name
+    `,
+    [companyId]
+  );
+
+  return result.rows;
+}
+
+export async function listLocations(companyId) {
+  const result = await query(
+    `
+      SELECT id, name, address
+      FROM locations
+      WHERE company_id = $1
+      ORDER BY name
+    `,
+    [companyId]
+  );
+
+  return result.rows;
+}
+
+export async function getCompanyBySubdomain(subdomain) {
+  const result = await query(
+    `
+      SELECT id, name
+      FROM companies
+      WHERE LOWER(SPLIT_PART(name, ' ', 1)) = LOWER($1)
+      LIMIT 1
+    `,
+    [subdomain]
+  );
+
+  if (result.rowCount === 0) {
+    throw notFound("Company not found");
+  }
+
+  return result.rows[0];
+}

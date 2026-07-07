@@ -48,3 +48,22 @@ VITE_API_BASE_URL=http://localhost:3000 docker-compose up
 # Customer Frontend
 cd visitor-management-customer-fe
 VITE_API_BASE_URL=http://localhost:3000 docker-compose up
+```
+
+## API Integration
+
+Both frontends communicate with this backend API at the configured `VITE_API_BASE_URL`.
+
+See [backend README](README.md) for API documentation.
+
+## Development
+
+When developing, start the backend first, then the frontends:
+
+1. Backend: `npm install && npm run migrate && npm start`
+2. Admin FE: `npm install && npm run dev`
+3. Customer FE: `npm install && npm run dev`
+
+## No Functionality Changes
+
+This separation maintains 100% of the original functionality - only the file organization has changed.

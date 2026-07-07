@@ -98,3 +98,107 @@ export async function createVisit(input) {
       input.hostId || null,
       input.visitorName,
       input.visitorEmail || null,
+      input.visitorPhone || null,
+      input.purpose,
+      input.expectedAt,
+      actor.id
+    ]
+  );
+
+  return getVisit(result.rows[0].id);
+}
+
+export async function updateVisit(id, input) {
+  const actor = await getUser(input.actorUserId);
+  const existing = await getVisit(id);
+  if (actor.company_id !== existing.company_id) {
+    throw badRequest("This user cannot edit visits for this company");
+  }
+
+  const canEdit = hasPermission(actor, "edit_any_visit")
+    || (hasPermission(actor, "edit_own_visit") && existing.created_by_user_id === actor.id);
+
+  if (!canEdit) {
+    throw badRequest("This user cannot edit this visit");
+  }
+
+  const result = await query(
+    `
+      UPDATE visits
+      SET
+        location_id = $2,
+        host_id = $3,
+        visitor_name = $4,
+        visitor_email = $5,
+        visitor_phone = $6,
+        purpose = $7,
+        expected_at = $8,
+        updated_by_user_id = $9,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING id
+    `,
+    [
+      id,
+      input.locationId,
+      input.hostId || null,
+      input.visitorName,
+      input.visitorEmail || null,
+      input.visitorPhone || null,
+      input.purpose,
+      input.expectedAt,
+      actor.id
+    ]
+  );
+
+  if (result.rowCount === 0) {
+    throw notFound("Visit not found");
+  }
+
+  return getVisit(id);
+}
+
+export async function updateVisitStatus(id, status, actorUserId) {
+  const actor = await getUser(actorUserId);
+  if (!hasPermission(actor, "check_in_out")) {
+    throw badRequest("This user cannot check visitors in or out");
+  }
+  const existing = await getVisit(id);
+  if (actor.company_id !== existing.company_id) {
+    throw badRequest("This user cannot check visitors for this company");
+  }
+
+  const timestampColumn = status === "checked_in" ? "checked_in_at" : "checked_out_at";
+  const result = await query(
+    `
+      UPDATE visits
+      SET status = $2, ${timestampColumn} = NOW(), updated_by_user_id = $3, updated_at = NOW()
+      WHERE id = $1
+      RETURNING id
+    `,
+    [id, status, actor.id]
+  );
+
+  if (result.rowCount === 0) {
+    throw notFound("Visit not found");
+  }
+
+  return getVisit(id);
+}
+
+export async function getDashboard(companyId) {
+  const result = await query(
+    `
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'expected')::int AS expected,
+        COUNT(*) FILTER (WHERE status = 'checked_in')::int AS onsite,
+        COUNT(*) FILTER (WHERE status = 'checked_out')::int AS completed,
+        COUNT(*) FILTER (WHERE expected_at::date = CURRENT_DATE)::int AS today
+      FROM visits
+      WHERE company_id = $1
+    `,
+    [companyId]
+  );
+
+  return result.rows[0];
+}
