@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { config } from "./config.js";
+import { registerAuthRoutes } from "./modules/auth/routes.js";
 import { registerCompanyRoutes } from "./modules/companies/routes.js";
 import { registerUserRoutes } from "./modules/users/routes.js";
 import { registerVisitRoutes } from "./modules/visits/routes.js";
@@ -23,6 +24,9 @@ export function createApp() {
   console.log('[APP] ✓ Health check endpoint registered');
   console.log('[APP] Registering API routes...');
   
+  registerAuthRoutes(app);
+  console.log('[APP] ✓ Auth routes registered');
+  
   registerCompanyRoutes(app);
   console.log('[APP] ✓ Company routes registered');
   
@@ -40,7 +44,8 @@ export function createApp() {
     });
   });
 
-  console.log('[APP] ✓ Express app fully configured');
+  console.log('[APP] ✓ Error handler registered');
+  console.log('[APP] Ready to accept requests!');
 
   return app;
 }
