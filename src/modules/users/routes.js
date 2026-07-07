@@ -8,8 +8,8 @@ const createUserSchema = z.object({
   fullName: z.string().min(2),
   email: z.string().email(),
   role: z.enum(["company_admin", "reception", "executive", "viewer"]),
-  username: z.string().min(3).max(50).optional(),
-  password: z.string().min(8).optional()
+  username: z.string().min(3).max(50).optional().or(z.literal("").transform(() => undefined)),
+  password: z.string().min(8).optional().or(z.literal("").transform(() => undefined))
 });
 
 export function registerUserRoutes(app) {
