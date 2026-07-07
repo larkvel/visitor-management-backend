@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../../http.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { approveCompany, createCompany, getPlatformDashboard, getCompanyBySubdomain, listCompanies, listHosts, listLocations, listPendingCompanies, updateCompany } from "./repository.js";
+import { approveCompany, createCompany, createLocation, createHost, getPlatformDashboard, getCompanyBySubdomain, listCompanies, listHosts, listLocations, listPendingCompanies, updateCompany } from "./repository.js";
 
 const createCompanySchema = z.object({
   name: z.string().min(2),
@@ -50,11 +50,27 @@ export function registerCompanyRoutes(app) {
     } catch (e) { next(e); }
   });
 
+  app.get("/api/companies/:companyId/locations", requireAuth, async (req, res, next) => {
+    try { res.json(await listLocations(req.params.companyId)); } catch (e) { next(e); }
+  });
+
+  app.post("/api/companies/:companyId/locations", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
+    try {
+      const { name, address } = req.body;
+      if (!name?.trim()) throw badRequest("Location name is required");
+      res.status(201).json(await createLocation(req.params.companyId, { name, address }));
+    } catch (e) { next(e); }
+  });
+
   app.get("/api/companies/:companyId/hosts", requireAuth, async (req, res, next) => {
     try { res.json(await listHosts(req.params.companyId)); } catch (e) { next(e); }
   });
 
-  app.get("/api/companies/:companyId/locations", requireAuth, async (req, res, next) => {
-    try { res.json(await listLocations(req.params.companyId)); } catch (e) { next(e); }
+  app.post("/api/companies/:companyId/hosts", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
+    try {
+      const { fullName, email, department } = req.body;
+      if (!fullName?.trim() || !email?.trim()) throw badRequest("Host name and email are required");
+      res.status(201).json(await createHost(req.params.companyId, { fullName, email, department }));
+    } catch (e) { next(e); }
   });
 }

@@ -58,50 +58,33 @@ export async function approveCompany(companyId) {
 
   return {
     company,
-    adminCredentials: {
-      username,
-      password,
-      loginUrl: `https://${company.subdomain}.larkvel.com`
-    }
+    adminCredentials: { username, password, loginUrl: `https://${company.subdomain}.larkvel.com` }
   };
 }
 
 export async function createCompany(input) {
   const result = await query(
     `INSERT INTO companies (name, industry, billing_email, contact_name, contact_phone, subscription_plan, account_status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING *`,
-    [
-      input.name,
-      input.industry || null,
-      input.billingEmail || null,
-      input.contactName || null,
-      input.contactPhone || null,
-      input.subscriptionPlan || "starter",
-      input.accountStatus || "trial"
-    ]
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [input.name, input.industry || null, input.billingEmail || null, input.contactName || null,
+     input.contactPhone || null, input.subscriptionPlan || "starter", input.accountStatus || "trial"]
   );
   return result.rows[0];
 }
 
 export async function updateCompany(id, input) {
   const result = await query(
-    `UPDATE companies
-     SET name = $2, industry = $3, billing_email = $4, contact_name = $5,
-         contact_phone = $6, subscription_plan = $7, account_status = $8
-     WHERE id = $1
-     RETURNING *`,
-    [id, input.name, input.industry || null, input.billingEmail || null,
-     input.contactName || null, input.contactPhone || null,
-     input.subscriptionPlan, input.accountStatus]
+    `UPDATE companies SET name=$2, industry=$3, billing_email=$4, contact_name=$5,
+     contact_phone=$6, subscription_plan=$7, account_status=$8 WHERE id=$1 RETURNING *`,
+    [id, input.name, input.industry || null, input.billingEmail || null, input.contactName || null,
+     input.contactPhone || null, input.subscriptionPlan, input.accountStatus]
   );
   return result.rows[0];
 }
 
 export async function getPlatformDashboard() {
   const result = await query(
-    `SELECT
-       COUNT(*)::int AS companies,
+    `SELECT COUNT(*)::int AS companies,
        COUNT(*) FILTER (WHERE account_status = 'active')::int AS active_companies,
        (SELECT COUNT(*)::int FROM app_users WHERE company_id IS NOT NULL) AS company_users,
        (SELECT COUNT(*)::int FROM visits) AS visits
@@ -118,12 +101,30 @@ export async function listHosts(companyId) {
   return result.rows;
 }
 
+export async function createHost(companyId, input) {
+  const result = await query(
+    `INSERT INTO hosts (company_id, full_name, email, department) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (company_id, email) DO UPDATE SET full_name = EXCLUDED.full_name, department = EXCLUDED.department
+     RETURNING id, full_name, email, department`,
+    [companyId, input.fullName.trim(), input.email.trim(), input.department?.trim() || null]
+  );
+  return result.rows[0];
+}
+
 export async function listLocations(companyId) {
   const result = await query(
     `SELECT id, name, address FROM locations WHERE company_id = $1 ORDER BY name`,
     [companyId]
   );
   return result.rows;
+}
+
+export async function createLocation(companyId, input) {
+  const result = await query(
+    `INSERT INTO locations (company_id, name, address) VALUES ($1, $2, $3) RETURNING id, name, address`,
+    [companyId, input.name.trim(), input.address?.trim() || null]
+  );
+  return result.rows[0];
 }
 
 export async function getCompanyBySubdomain(subdomain) {
