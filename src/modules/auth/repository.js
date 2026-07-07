@@ -1,73 +1,65 @@
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { query } from "../../db/pool.js";
 import { badRequest } from "../../http.js";
+import { config } from "../../config.js";
 
-// Convert company name to subdomain format
 function generateSubdomain(name) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .substring(0, 50);
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").substring(0, 50);
 }
 
-export async function checkSubdomainExists(subdomain) {
+export async function loginUser(username, password) {
   const result = await query(
-    `SELECT COUNT(*) as count FROM companies WHERE subdomain = $1`,
-    [subdomain]
+    `SELECT u.id, u.username, u.full_name, u.email, u.role, u.password_hash,
+            u.company_id, u.is_active,
+            c.name AS company_name, c.account_status AS company_status, c.subdomain
+     FROM app_users u
+     LEFT JOIN companies c ON c.id = u.company_id
+     WHERE u.username = $1`,
+    [username]
   );
-  return result.rows[0].count > 0;
+
+  const user = result.rows[0];
+  if (!user) throw badRequest("Invalid username or password");
+  if (!user.is_active) throw badRequest("Your account has been deactivated");
+  if (!user.password_hash) throw badRequest("Account setup incomplete. Contact your administrator.");
+
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) throw badRequest("Invalid username or password");
+
+  if (user.company_id && user.company_status !== "active") {
+    throw badRequest("Your company account is not active yet. Please wait for admin approval.");
+  }
+
+  const token = jwt.sign(
+    { userId: user.id, username: user.username, role: user.role, companyId: user.company_id, companyName: user.company_name },
+    config.jwtSecret,
+    { expiresIn: "8h" }
+  );
+
+  return {
+    token,
+    user: {
+      id: user.id, username: user.username, fullName: user.full_name,
+      email: user.email, role: user.role,
+      companyId: user.company_id, companyName: user.company_name, subdomain: user.subdomain
+    }
+  };
 }
 
 export async function registerCompany(input) {
-  const subdomain = generateSubdomain(input.name);
-  
-  // Check if subdomain already exists
-  const exists = await checkSubdomainExists(subdomain);
-  if (exists) {
-    throw badRequest(`Subdomain '${subdomain}' is already taken. Please try a different company name.`);
+  const subdomain = generateSubdomain(input.companyName);
+
+  const existing = await query(`SELECT id FROM companies WHERE subdomain = $1`, [subdomain]);
+  if (existing.rows.length > 0) {
+    throw badRequest(`The name "${input.companyName}" is already taken. Please choose a different company name.`);
   }
 
-  // Create company with trial status
-  const result = await query(
-    `
-      INSERT INTO companies (
-        name,
-        subdomain,
-        industry,
-        billing_email,
-        contact_name,
-        contact_phone,
-        subscription_plan,
-        account_status
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, name, subdomain, subscription_plan, account_status, created_at
-    `,
-    [
-      input.name,
-      subdomain,
-      input.industry || null,
-      input.email,
-      input.name,
-      input.phone || null,
-      "starter",
-      "trial"
-    ]
+  await query(
+    `INSERT INTO companies (name, subdomain, industry, billing_email, contact_name, contact_phone, subscription_plan, account_status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'starter', 'pending')`,
+    [input.companyName, subdomain, input.industry || null, input.email, input.adminName, input.phone || null]
   );
 
-  if (!result.rows[0]) {
-    throw badRequest("Failed to register company");
-  }
-
-  return {
-    ...result.rows[0],
-    message: `Company registered successfully! Access your dashboard at ${subdomain}.larkvel.com`,
-    nextSteps: [
-      "Create your first location",
-      "Add team members",
-      "Set up visitor check-in",
-      "Await admin approval to go live"
-    ]
-  };
+  return { message: "Registration submitted! Your company account is pending admin approval. You will receive login credentials once approved." };
 }

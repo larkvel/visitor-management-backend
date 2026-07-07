@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../../http.js";
-import { createCompany, getPlatformDashboard, listCompanies, listHosts, listLocations, updateCompany, getCompanyBySubdomain } from "./repository.js";
+import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { approveCompany, createCompany, getPlatformDashboard, getCompanyBySubdomain, listCompanies, listHosts, listLocations, listPendingCompanies, updateCompany } from "./repository.js";
 
 const createCompanySchema = z.object({
   name: z.string().min(2),
@@ -9,76 +10,51 @@ const createCompanySchema = z.object({
   contactName: z.string().optional(),
   contactPhone: z.string().optional(),
   subscriptionPlan: z.enum(["starter", "business", "enterprise"]).optional(),
-  accountStatus: z.enum(["trial", "active", "suspended", "cancelled"]).optional()
+  accountStatus: z.enum(["pending", "trial", "active", "suspended", "cancelled"]).optional()
 });
 
 export function registerCompanyRoutes(app) {
-  app.get("/api/companies", async (_req, res, next) => {
-    try {
-      res.json(await listCompanies());
-    } catch (error) {
-      next(error);
-    }
+  app.get("/api/companies", requireAuth, async (_req, res, next) => {
+    try { res.json(await listCompanies()); } catch (e) { next(e); }
   });
 
-  app.get("/api/platform/dashboard", async (_req, res, next) => {
-    try {
-      res.json(await getPlatformDashboard());
-    } catch (error) {
-      next(error);
-    }
+  app.get("/api/platform/dashboard", requireAuth, requireRole("platform_admin"), async (_req, res, next) => {
+    try { res.json(await getPlatformDashboard()); } catch (e) { next(e); }
+  });
+
+  app.get("/api/admin/companies/pending", requireAuth, requireRole("platform_admin"), async (_req, res, next) => {
+    try { res.json(await listPendingCompanies()); } catch (e) { next(e); }
+  });
+
+  app.post("/api/admin/companies/:companyId/approve", requireAuth, requireRole("platform_admin"), async (req, res, next) => {
+    try { res.json(await approveCompany(req.params.companyId)); } catch (e) { next(e); }
   });
 
   app.get("/api/companies/by-subdomain/:subdomain", async (req, res, next) => {
-    try {
-      res.json(await getCompanyBySubdomain(req.params.subdomain));
-    } catch (error) {
-      next(error);
-    }
+    try { res.json(await getCompanyBySubdomain(req.params.subdomain)); } catch (e) { next(e); }
   });
 
-  app.post("/api/companies", async (req, res, next) => {
+  app.post("/api/companies", requireAuth, requireRole("platform_admin"), async (req, res, next) => {
     try {
       const parsed = createCompanySchema.safeParse(req.body);
-      if (!parsed.success) {
-        throw badRequest("Company name is required");
-      }
-
+      if (!parsed.success) throw badRequest("Company name is required");
       res.status(201).json(await createCompany(parsed.data));
-    } catch (error) {
-      next(error);
-    }
+    } catch (e) { next(e); }
   });
 
-  app.put("/api/companies/:companyId", async (req, res, next) => {
+  app.put("/api/companies/:companyId", requireAuth, requireRole("platform_admin"), async (req, res, next) => {
     try {
-      const parsed = createCompanySchema.required({
-        subscriptionPlan: true,
-        accountStatus: true
-      }).safeParse(req.body);
-      if (!parsed.success) {
-        throw badRequest("Company details are invalid");
-      }
-
+      const parsed = createCompanySchema.safeParse(req.body);
+      if (!parsed.success) throw badRequest("Company details are invalid");
       res.json(await updateCompany(req.params.companyId, parsed.data));
-    } catch (error) {
-      next(error);
-    }
+    } catch (e) { next(e); }
   });
 
-  app.get("/api/companies/:companyId/hosts", async (req, res, next) => {
-    try {
-      res.json(await listHosts(req.params.companyId));
-    } catch (error) {
-      next(error);
-    }
+  app.get("/api/companies/:companyId/hosts", requireAuth, async (req, res, next) => {
+    try { res.json(await listHosts(req.params.companyId)); } catch (e) { next(e); }
   });
 
-  app.get("/api/companies/:companyId/locations", async (req, res, next) => {
-    try {
-      res.json(await listLocations(req.params.companyId));
-    } catch (error) {
-      next(error);
-    }
+  app.get("/api/companies/:companyId/locations", requireAuth, async (req, res, next) => {
+    try { res.json(await listLocations(req.params.companyId)); } catch (e) { next(e); }
   });
 }

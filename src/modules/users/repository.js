@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { query } from "../../db/pool.js";
 import { notFound } from "../../http.js";
 
@@ -12,52 +13,36 @@ export const rolePermissions = {
 export async function listUsers(companyId) {
   const params = [];
   const where = [];
-
-  if (companyId) {
-    params.push(companyId);
-    where.push(`company_id = $${params.length}`);
-  }
-
+  if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
   const result = await query(
-    `
-      SELECT id, company_id, full_name, email, role, is_active, created_at
-      FROM app_users
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY role, full_name
-    `,
+    `SELECT id, company_id, full_name, email, username, role, is_active, created_at
+     FROM app_users
+     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+     ORDER BY role, full_name`,
     params
   );
-
   return result.rows.map(withPermissions);
 }
 
 export async function getUser(id) {
   const result = await query(
-    `
-      SELECT id, company_id, full_name, email, role, is_active, created_at
-      FROM app_users
-      WHERE id = $1
-    `,
+    `SELECT id, company_id, full_name, email, username, role, is_active, created_at FROM app_users WHERE id = $1`,
     [id]
   );
-
-  if (result.rowCount === 0) {
-    throw notFound("User not found");
-  }
-
+  if (result.rowCount === 0) throw notFound("User not found");
   return withPermissions(result.rows[0]);
 }
 
 export async function createUser(input) {
-  const result = await query(
-    `
-      INSERT INTO app_users (company_id, full_name, email, role)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, company_id, full_name, email, role, is_active, created_at
-    `,
-    [input.companyId, input.fullName, input.email, input.role]
-  );
+  let passwordHash = null;
+  if (input.password) passwordHash = await bcrypt.hash(input.password, 10);
 
+  const result = await query(
+    `INSERT INTO app_users (company_id, full_name, email, role, username, password_hash)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
+    [input.companyId, input.fullName, input.email, input.role, input.username || null, passwordHash]
+  );
   return withPermissions(result.rows[0]);
 }
 
@@ -66,8 +51,5 @@ export function hasPermission(user, permission) {
 }
 
 function withPermissions(user) {
-  return {
-    ...user,
-    permissions: rolePermissions[user.role] || []
-  };
+  return { ...user, permissions: rolePermissions[user.role] || [] };
 }

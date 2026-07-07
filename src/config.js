@@ -11,19 +11,18 @@ const allowedOrigins = [
 console.log('[CONFIG] Loading configuration...');
 console.log('[CONFIG] NODE_ENV:', process.env.NODE_ENV || 'not set');
 console.log('[CONFIG] PORT:', process.env.PORT || 'default (3000)');
-console.log('[CONFIG] Allowed CORS Origins:', allowedOrigins);
 console.log('[CONFIG] DATABASE_URL:', process.env.DATABASE_URL ? 'configured' : 'NOT SET');
 
 export const config = {
   port: Number(process.env.PORT || 3000),
   databaseUrl: process.env.DATABASE_URL,
+  jwtSecret: process.env.JWT_SECRET || 'larkvel-jwt-secret-change-in-production',
   corsOrigin: {
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS not allowed for origin: ${origin}`));
-      }
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (/^https:\/\/[a-z0-9-]+\.larkvel\.com$/.test(origin)) return callback(null, true);
+      callback(new Error(`CORS not allowed for origin: ${origin}`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -31,8 +30,10 @@ export const config = {
   }
 };
 
-if (!config.databaseUrl) {
-  throw new Error("DATABASE_URL is required");
+if (!config.databaseUrl) throw new Error('DATABASE_URL is required');
+
+if (config.jwtSecret === 'larkvel-jwt-secret-change-in-production') {
+  console.warn('[CONFIG] ⚠️  Using default JWT_SECRET. Set JWT_SECRET env var in production!');
 }
 
 console.log('[CONFIG] ✓ Configuration loaded successfully');
