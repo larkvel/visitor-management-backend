@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { config } from "./config.js";
 import { registerAuthRoutes } from "./modules/auth/routes.js";
 import { registerCompanyRoutes } from "./modules/companies/routes.js";
@@ -8,12 +9,35 @@ import { registerVisitRoutes } from "./modules/visits/routes.js";
 
 console.log('[APP] Creating Express application...');
 
+// Strict limiter for login / register — 10 attempts per 15 minutes per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts, please try again after 15 minutes" }
+});
+
+// General API limiter — 200 requests per minute per IP
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please slow down" }
+});
+
 export function createApp() {
   const app = express();
 
   console.log('[APP] Setting up CORS middleware...');
   app.use(cors({ origin: config.corsOrigin }));
   app.use(express.json());
+
+  console.log('[APP] Setting up rate limiting...');
+  app.use("/api/auth", authLimiter);
+  app.use("/api", apiLimiter);
+  console.log('[APP] ✓ Rate limiters applied');
 
   console.log('[APP] Setting up health check endpoint...');
 
