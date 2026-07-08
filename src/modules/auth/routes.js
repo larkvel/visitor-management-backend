@@ -4,7 +4,8 @@ import { loginUser, registerCompany } from "./repository.js";
 
 const loginSchema = z.object({
   username: z.string().min(1),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  subdomain: z.string().optional().nullable()
 });
 
 const registerSchema = z.object({
@@ -20,7 +21,7 @@ export function registerAuthRoutes(app) {
     try {
       const parsed = loginSchema.safeParse(req.body);
       if (!parsed.success) throw badRequest("Username and password are required");
-      res.json(await loginUser(parsed.data.username, parsed.data.password));
+      res.json(await loginUser(parsed.data.username, parsed.data.password, parsed.data.subdomain));
     } catch (error) { next(error); }
   });
 

@@ -8,7 +8,7 @@ function generateSubdomain(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").substring(0, 50);
 }
 
-export async function loginUser(username, password) {
+export async function loginUser(username, password, subdomain) {
   const result = await query(
     `SELECT u.id, u.username, u.full_name, u.email, u.role, u.password_hash,
             u.company_id, u.is_active,
@@ -27,8 +27,22 @@ export async function loginUser(username, password) {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) throw badRequest("Invalid username or password");
 
-  if (user.company_id && user.company_status !== "active") {
-    throw badRequest("Your company account is not active yet. Please wait for admin approval.");
+  // Multi-tenancy Subdomain Isolation Verification
+  if (user.company_id) {
+    if (!subdomain) {
+      throw badRequest("Subdomain is required to log in to a company account.");
+    }
+    if (!user.subdomain || user.subdomain.toLowerCase() !== subdomain.toLowerCase()) {
+      throw badRequest("This user does not belong to this company.");
+    }
+    if (user.company_status !== "active") {
+      throw badRequest("Your company account is not active yet. Please wait for admin approval.");
+    }
+  } else {
+    // Platform admin logging in
+    if (subdomain && subdomain.toLowerCase() !== "admin") {
+      throw badRequest("Platform administrators can only log in through the admin portal.");
+    }
   }
 
   const token = jwt.sign(
