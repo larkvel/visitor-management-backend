@@ -53,3 +53,24 @@ export function hasPermission(user, permission) {
 function withPermissions(user) {
   return { ...user, permissions: rolePermissions[user.role] || [] };
 }
+
+export async function updateUserStatus(id, isActive) {
+  const result = await query(
+    `UPDATE app_users 
+     SET is_active = $2, updated_at = NOW() 
+     WHERE id = $1
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
+    [id, isActive]
+  );
+  if (result.rowCount === 0) throw notFound("User not found");
+  return withPermissions(result.rows[0]);
+}
+
+export async function deleteUser(id) {
+  const result = await query(
+    `DELETE FROM app_users WHERE id = $1 RETURNING id`,
+    [id]
+  );
+  if (result.rowCount === 0) throw notFound("User not found");
+  return { id };
+}

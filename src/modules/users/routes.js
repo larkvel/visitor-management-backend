@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../../http.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { createUser, listUsers } from "./repository.js";
+import { createUser, listUsers, updateUserStatus, deleteUser, getUser } from "./repository.js";
 
 const createUserSchema = z.object({
   companyId: z.string().uuid(),
@@ -29,6 +29,37 @@ export function registerUserRoutes(app) {
       
       const companyId = req.user.role === "platform_admin" ? parsed.data.companyId : req.user.companyId;
       res.status(201).json(await createUser({ ...parsed.data, companyId }));
+    } catch (error) { next(error); }
+  });
+
+  app.put("/api/users/:id/status", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
+    try {
+      const { isActive } = req.body;
+      if (typeof isActive !== "boolean") throw badRequest("isActive boolean is required");
+      
+      const targetUser = await getUser(req.params.id);
+      if (req.user.role !== "platform_admin" && targetUser.company_id !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (targetUser.id === req.user.userId) {
+        throw badRequest("You cannot deactivate or toggle status of your own account");
+      }
+
+      res.json(await updateUserStatus(req.params.id, isActive));
+    } catch (error) { next(error); }
+  });
+
+  app.delete("/api/users/:id", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
+    try {
+      const targetUser = await getUser(req.params.id);
+      if (req.user.role !== "platform_admin" && targetUser.company_id !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (targetUser.id === req.user.userId) {
+        throw badRequest("You cannot delete your own account");
+      }
+
+      res.json(await deleteUser(req.params.id));
     } catch (error) { next(error); }
   });
 }
