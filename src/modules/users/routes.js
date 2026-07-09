@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../../http.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { createUser, listUsers, updateUserStatus, deleteUser, getUser } from "./repository.js";
+import { createUser, listUsers, updateUserStatus, deleteUser, getUser, updateUserRole } from "./repository.js";
 
 const createUserSchema = z.object({
   companyId: z.string().uuid(),
@@ -46,6 +46,25 @@ export function registerUserRoutes(app) {
       }
 
       res.json(await updateUserStatus(req.params.id, isActive));
+    } catch (error) { next(error); }
+  });
+
+  app.put("/api/users/:id/role", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
+    try {
+      const { role } = req.body;
+      if (!["company_admin", "reception", "executive", "viewer"].includes(role)) {
+        throw badRequest("Invalid role requested");
+      }
+      
+      const targetUser = await getUser(req.params.id);
+      if (req.user.role !== "platform_admin" && targetUser.company_id !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (targetUser.id === req.user.userId) {
+        throw badRequest("You cannot change your own role");
+      }
+
+      res.json(await updateUserRole(req.params.id, role));
     } catch (error) { next(error); }
   });
 

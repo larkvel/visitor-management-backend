@@ -74,3 +74,15 @@ export async function deleteUser(id) {
   if (result.rowCount === 0) throw notFound("User not found");
   return { id };
 }
+
+export async function updateUserRole(id, role) {
+  const result = await query(
+    `UPDATE app_users 
+     SET role = $2 
+     WHERE id = $1
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
+    [id, role]
+  );
+  if (result.rowCount === 0) throw notFound("User not found");
+  return withPermissions(result.rows[0]);
+}
