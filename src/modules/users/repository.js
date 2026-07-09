@@ -57,7 +57,7 @@ function withPermissions(user) {
 export async function updateUserStatus(id, isActive) {
   const result = await query(
     `UPDATE app_users 
-     SET is_active = $2, updated_at = NOW() 
+     SET is_active = $2 
      WHERE id = $1
      RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
     [id, isActive]
