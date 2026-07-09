@@ -1,6 +1,7 @@
 import { query } from "../../db/pool.js";
 import { badRequest, notFound } from "../../http.js";
 import { getUser, hasPermission } from "../users/repository.js";
+import { r2 } from "../../r2.js";
 
 const visitSelect = `
   SELECT
@@ -11,6 +12,7 @@ const visitSelect = `
     l.name AS location_name,
     v.host_id,
     h.full_name AS host_name,
+    h.department AS host_department,
     v.visitor_name,
     v.visitor_email,
     v.visitor_phone,
@@ -29,6 +31,76 @@ const visitSelect = `
   LEFT JOIN app_users creator ON creator.id = v.created_by_user_id
 `;
 
+export async function archiveOldVisits() {
+  if (!r2.isEnabled()) {
+    console.log("[ARCHIVE] Skipping archiving because R2 is not configured.");
+    return;
+  }
+
+  try {
+    // 1. Fetch visits older than 48 hours
+    const oldVisitsResult = await query(
+      `SELECT v.id, v.company_id, c.name AS company_name, v.location_id, l.name AS location_name,
+              v.host_id, h.full_name AS host_name, h.department AS host_department, v.visitor_name,
+              v.visitor_email, v.visitor_phone, v.purpose, v.status, v.expected_at,
+              v.checked_in_at, v.checked_out_at, v.created_by_user_id, creator.full_name AS created_by_name,
+              v.created_at
+       FROM visits v
+       JOIN companies c ON c.id = v.company_id
+       JOIN locations l ON l.id = v.location_id
+       LEFT JOIN hosts h ON h.id = v.host_id
+       LEFT JOIN app_users creator ON creator.id = v.created_by_user_id
+       WHERE v.expected_at < NOW() - INTERVAL '48 hours'
+       ORDER BY v.expected_at ASC`
+    );
+
+    const visits = oldVisitsResult.rows;
+    if (visits.length === 0) {
+      console.log("[ARCHIVE] No visits older than 48 hours to archive.");
+      return;
+    }
+
+    console.log(`[ARCHIVE] Found ${visits.length} visits to archive. Grouping by company and date...`);
+
+    // 2. Group by company_id and date(expected_at)
+    const groups = {};
+    for (const v of visits) {
+      const date = new Date(v.expected_at).toISOString().split("T")[0];
+      const groupKey = `${v.company_id}:${date}`;
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(v);
+    }
+
+    // 3. For each group, write/merge to R2, then delete from database
+    for (const [groupKey, groupVisits] of Object.entries(groups)) {
+      const [companyId, date] = groupKey.split(":");
+      const r2Key = `companies/${companyId}/archive/${date}.json`;
+
+      // Fetch existing archive file for that day from R2 (if any)
+      const existing = await r2.getJSON(r2Key) || [];
+      
+      // Combine and filter out duplicates by ID
+      const combined = [...existing];
+      for (const newV of groupVisits) {
+        if (!combined.some(x => x.id === newV.id)) {
+          combined.push(newV);
+        }
+      }
+
+      // Upload updated archive back to R2
+      await r2.putJSON(r2Key, combined);
+      
+      // Delete visits from database
+      const visitIds = groupVisits.map(x => x.id);
+      await query(`DELETE FROM visits WHERE id = ANY($1)`, [visitIds]);
+      
+      console.log(`[ARCHIVE] Successfully archived ${visitIds.length} visits for company ${companyId} on date ${date}.`);
+    }
+  } catch (err) {
+    console.error("[ARCHIVE] Error executing archiving job:", err.message);
+  }
+}
+
 export async function listVisits(filters) {
   const params = [];
   const where = [];
@@ -43,19 +115,79 @@ export async function listVisits(filters) {
     where.push(`v.status = $${params.length}`);
   }
 
-  const result = await query(
-    `
-      ${visitSelect}
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY
-        CASE WHEN v.status = 'checked_in' THEN 0 ELSE 1 END,
-        v.expected_at ASC
-      LIMIT 100
-    `,
-    params
-  );
+  const startDate = filters.startDate ? new Date(filters.startDate) : null;
+  const endDate = filters.endDate ? new Date(filters.endDate) : null;
 
-  return result.rows;
+  // Cutoff is 48 hours ago (keep active database query inside 48 hours)
+  const cutoffDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const queryR2 = startDate && startDate < cutoffDate;
+
+  let dbVisits = [];
+  // If no start date is specified, or range ends after cutoff, query Postgres
+  if (!startDate || (endDate && endDate >= cutoffDate) || (!endDate && Date.now() >= cutoffDate)) {
+    const dbWhere = [...where];
+    const dbParams = [...params];
+
+    if (startDate) {
+      const effectiveStart = startDate > cutoffDate ? startDate : cutoffDate;
+      dbParams.push(effectiveStart.toISOString().split("T")[0]);
+      dbWhere.push(`v.expected_at::date >= $${dbParams.length}`);
+    }
+    if (endDate) {
+      dbParams.push(endDate.toISOString().split("T")[0]);
+      dbWhere.push(`v.expected_at::date <= $${dbParams.length}`);
+    }
+
+    const result = await query(
+      `
+        ${visitSelect}
+        ${dbWhere.length ? `WHERE ${dbWhere.join(" AND ")}` : ""}
+        ORDER BY
+          CASE WHEN v.status = 'checked_in' THEN 0 ELSE 1 END,
+          v.expected_at ASC
+        LIMIT 100
+      `,
+      dbParams
+    );
+    dbVisits = result.rows;
+  }
+
+  let r2Visits = [];
+  if (queryR2 && r2.isEnabled() && filters.companyId) {
+    const r2End = (endDate && endDate < cutoffDate) ? endDate : cutoffDate;
+    let current = new Date(startDate);
+    const datesToFetch = [];
+
+    while (current <= r2End) {
+      datesToFetch.push(current.toISOString().split("T")[0]);
+      current.setDate(current.getDate() + 1);
+    }
+
+    console.log(`[R2] Fetching archived logs for dates:`, datesToFetch);
+    const fetchPromises = datesToFetch.map(d => 
+      r2.getJSON(`companies/${filters.companyId}/archive/${d}.json`).catch(() => null)
+    );
+
+    const r2Results = await Promise.all(fetchPromises);
+    for (const res of r2Results) {
+      if (res && Array.isArray(res)) {
+        r2Visits.push(...res);
+      }
+    }
+
+    if (filters.status) {
+      r2Visits = r2Visits.filter(v => v.status === filters.status);
+    }
+  }
+
+  const combined = [...dbVisits, ...r2Visits];
+  combined.sort((a, b) => {
+    if (a.status === 'checked_in' && b.status !== 'checked_in') return -1;
+    if (a.status !== 'checked_in' && b.status === 'checked_in') return 1;
+    return new Date(a.expected_at) - new Date(b.expected_at);
+  });
+
+  return combined;
 }
 
 export async function getVisit(id) {

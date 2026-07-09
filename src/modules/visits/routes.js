@@ -20,7 +20,12 @@ const updateVisitSchema = createVisitSchema.omit({ companyId: true });
 export function registerVisitRoutes(app) {
   app.get("/api/visits", requireAuth, async (req, res, next) => {
     try {
-      res.json(await listVisits({ companyId: req.query.companyId, status: req.query.status }));
+      res.json(await listVisits({ 
+        companyId: req.query.companyId, 
+        status: req.query.status,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate
+      }));
     } catch (error) { next(error); }
   });
 
