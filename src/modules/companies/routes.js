@@ -51,23 +51,39 @@ export function registerCompanyRoutes(app) {
   });
 
   app.get("/api/companies/:companyId/locations", requireAuth, async (req, res, next) => {
-    try { res.json(await listLocations(req.params.companyId)); } catch (e) { next(e); }
+    try {
+      if (req.user.role !== "platform_admin" && req.params.companyId !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      res.json(await listLocations(req.params.companyId));
+    } catch (e) { next(e); }
   });
-
+ 
   app.post("/api/companies/:companyId/locations", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
     try {
+      if (req.user.role !== "platform_admin" && req.params.companyId !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const { name, address } = req.body;
       if (!name?.trim()) throw badRequest("Location name is required");
       res.status(201).json(await createLocation(req.params.companyId, { name, address }));
     } catch (e) { next(e); }
   });
-
+ 
   app.get("/api/companies/:companyId/hosts", requireAuth, async (req, res, next) => {
-    try { res.json(await listHosts(req.params.companyId)); } catch (e) { next(e); }
+    try {
+      if (req.user.role !== "platform_admin" && req.params.companyId !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      res.json(await listHosts(req.params.companyId));
+    } catch (e) { next(e); }
   });
-
+ 
   app.post("/api/companies/:companyId/hosts", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
     try {
+      if (req.user.role !== "platform_admin" && req.params.companyId !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const { fullName, email, department } = req.body;
       if (!fullName?.trim() || !email?.trim()) throw badRequest("Host name and email are required");
       res.status(201).json(await createHost(req.params.companyId, { fullName, email, department }));

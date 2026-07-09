@@ -20,8 +20,10 @@ const updateVisitSchema = createVisitSchema.omit({ companyId: true });
 export function registerVisitRoutes(app) {
   app.get("/api/visits", requireAuth, async (req, res, next) => {
     try {
+      const companyId = req.user.role === "platform_admin" ? req.query.companyId : req.user.companyId;
+      if (!companyId) throw badRequest("companyId is required");
       res.json(await listVisits({ 
-        companyId: req.query.companyId, 
+        companyId, 
         status: req.query.status,
         startDate: req.query.startDate,
         endDate: req.query.endDate
@@ -33,7 +35,9 @@ export function registerVisitRoutes(app) {
     try {
       const parsed = createVisitSchema.safeParse(req.body);
       if (!parsed.success) throw badRequest("Visit details are invalid");
-      res.status(201).json(await createVisit(parsed.data));
+      
+      const companyId = req.user.role === "platform_admin" ? parsed.data.companyId : req.user.companyId;
+      res.status(201).json(await createVisit({ ...parsed.data, companyId }));
     } catch (error) { next(error); }
   });
 
@@ -63,8 +67,9 @@ export function registerVisitRoutes(app) {
 
   app.get("/api/dashboard", requireAuth, async (req, res, next) => {
     try {
-      if (!req.query.companyId) throw badRequest("companyId is required");
-      res.json(await getDashboard(req.query.companyId));
+      const companyId = req.user.role === "platform_admin" ? req.query.companyId : req.user.companyId;
+      if (!companyId) throw badRequest("companyId is required");
+      res.json(await getDashboard(companyId));
     } catch (error) { next(error); }
   });
 }

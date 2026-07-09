@@ -14,7 +14,11 @@ const createUserSchema = z.object({
 
 export function registerUserRoutes(app) {
   app.get("/api/users", requireAuth, async (req, res, next) => {
-    try { res.json(await listUsers(req.query.companyId)); }
+    try {
+      const companyId = req.user.role === "platform_admin" ? req.query.companyId : req.user.companyId;
+      if (!companyId) throw badRequest("companyId is required");
+      res.json(await listUsers(companyId));
+    }
     catch (error) { next(error); }
   });
 
@@ -22,7 +26,9 @@ export function registerUserRoutes(app) {
     try {
       const parsed = createUserSchema.safeParse(req.body);
       if (!parsed.success) throw badRequest("User details are invalid: " + parsed.error.errors.map(e => e.message).join(", "));
-      res.status(201).json(await createUser(parsed.data));
+      
+      const companyId = req.user.role === "platform_admin" ? parsed.data.companyId : req.user.companyId;
+      res.status(201).json(await createUser({ ...parsed.data, companyId }));
     } catch (error) { next(error); }
   });
 }
