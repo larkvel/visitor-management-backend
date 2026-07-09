@@ -2,6 +2,7 @@ import { query } from "../../db/pool.js";
 import { badRequest, notFound } from "../../http.js";
 import { getUser, hasPermission } from "../users/repository.js";
 import { r2 } from "../../r2.js";
+import { sendVisitEmails } from "../../services/mailer.js";
 
 const visitSelect = `
   SELECT
@@ -237,7 +238,9 @@ export async function createVisit(input) {
     ]
   );
 
-  return getVisit(result.rows[0].id);
+  const visit = await getVisit(result.rows[0].id);
+  sendVisitEmails(visit).catch((err) => console.error("[EMAIL] Error sending pass email:", err));
+  return visit;
 }
 
 export async function updateVisit(id, input) {
@@ -333,4 +336,60 @@ export async function getDashboard(companyId) {
   );
 
   return result.rows[0];
+}
+
+export async function processScanCheck(id) {
+  let visit = null;
+  try {
+    const result = await query(
+      `SELECT v.id, v.company_id, c.subdomain, v.visitor_name, v.status, v.checked_in_at, v.checked_out_at
+       FROM visits v
+       JOIN companies c ON c.id = v.company_id
+       WHERE v.id = $1`,
+      [id]
+    );
+    if (result.rowCount === 0) throw notFound("Visit not found");
+    visit = result.rows[0];
+
+    let newStatus = "";
+    if (visit.status === "expected") {
+      newStatus = "checked_in";
+      await query(
+        `UPDATE visits 
+         SET status = 'checked_in', checked_in_at = NOW() 
+         WHERE id = $1`,
+        [id]
+      );
+    } else if (visit.status === "checked_in") {
+      const checkedInAt = new Date(visit.checked_in_at).getTime();
+      const now = Date.now();
+      const elapsedSeconds = (now - checkedInAt) / 1000;
+      if (elapsedSeconds < 30) {
+        const waitTime = Math.ceil(30 - elapsedSeconds);
+        throw badRequest(`Accidental scan detected. Please wait another ${waitTime} second(s) before checking out.`);
+      }
+      newStatus = "checked_out";
+      await query(
+        `UPDATE visits 
+         SET status = 'checked_out', checked_out_at = NOW() 
+         WHERE id = $1`,
+        [id]
+      );
+    } else if (visit.status === "checked_out") {
+      throw badRequest("Visitor has already checked out.");
+    } else {
+      throw badRequest(`Scan not supported for status: ${visit.status}`);
+    }
+
+    return {
+      subdomain: visit.subdomain,
+      visitorName: visit.visitor_name,
+      newStatus
+    };
+  } catch (error) {
+    if (visit) {
+      error.subdomain = visit.subdomain;
+    }
+    throw error;
+  }
 }

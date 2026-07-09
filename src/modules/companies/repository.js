@@ -135,3 +135,12 @@ export async function getCompanyBySubdomain(subdomain) {
   if (result.rowCount === 0) throw notFound("Company not found");
   return result.rows[0];
 }
+
+export async function getHostById(id) {
+  const result = await query(
+    `SELECT id, company_id, full_name, email, department FROM hosts WHERE id = $1`,
+    [id]
+  );
+  if (result.rowCount === 0) return null;
+  return result.rows[0];
+}

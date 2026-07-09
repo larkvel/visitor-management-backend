@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../../http.js";
 import { requireAuth } from "../../middleware/auth.js";
-import { createVisit, getDashboard, listVisits, updateVisit, updateVisitStatus } from "./repository.js";
+import { createVisit, getDashboard, listVisits, updateVisit, updateVisitStatus, processScanCheck } from "./repository.js";
 
 const createVisitSchema = z.object({
   companyId: z.string().uuid(),
@@ -71,5 +71,23 @@ export function registerVisitRoutes(app) {
       if (!companyId) throw badRequest("companyId is required");
       res.json(await getDashboard(companyId));
     } catch (error) { next(error); }
+  });
+
+  app.get("/api/visits/:id/scan-check", async (req, res, next) => {
+    try {
+      const result = await processScanCheck(req.params.id);
+      const isProd = process.env.NODE_ENV === "production";
+      const feDomain = isProd ? `${result.subdomain}.larkvel.com` : `${result.subdomain}.localhost:5173`;
+      const protocol = isProd ? "https" : "http";
+      const redirectUrl = `${protocol}://${feDomain}/scan-status?status=${result.newStatus}&name=${encodeURIComponent(result.visitorName)}`;
+      res.redirect(redirectUrl);
+    } catch (error) {
+      const subdomain = error.subdomain || "gmv";
+      const isProd = process.env.NODE_ENV === "production";
+      const feDomain = isProd ? `${subdomain}.larkvel.com` : `${subdomain}.localhost:5173`;
+      const protocol = isProd ? "https" : "http";
+      const redirectUrl = `${protocol}://${feDomain}/scan-status?status=error&msg=${encodeURIComponent(error.message)}`;
+      res.redirect(redirectUrl);
+    }
   });
 }
