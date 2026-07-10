@@ -8,9 +8,12 @@ const createVisitSchema = z.object({
   actorUserId: z.string().uuid(),
   locationId: z.string().uuid(),
   hostId: z.string().uuid().optional().or(z.literal("")),
+  hostUserId: z.string().uuid().optional().or(z.literal("")),
+  hostName: z.string().optional().or(z.literal("")),
+  hostEmail: z.string().email().optional().or(z.literal("")),
   visitorName: z.string().min(2),
   visitorEmail: z.string().email().optional().or(z.literal("")),
-  visitorPhone: z.string().optional(),
+  visitorPhone: z.string().optional().or(z.literal("")),
   purpose: z.string().min(2),
   expectedAt: z.string().datetime()
 });

@@ -12,7 +12,9 @@ const visitSelect = `
     v.location_id,
     l.name AS location_name,
     v.host_id,
-    h.full_name AS host_name,
+    v.host_user_id,
+    COALESCE(v.host_name, h.full_name) AS host_name,
+    COALESCE(v.host_email, h.email) AS host_email,
     h.department AS host_department,
     v.visitor_name,
     v.visitor_email,
@@ -42,7 +44,7 @@ export async function archiveOldVisits() {
     // 1. Fetch visits older than 48 hours
     const oldVisitsResult = await query(
       `SELECT v.id, v.company_id, c.name AS company_name, v.location_id, l.name AS location_name,
-              v.host_id, h.full_name AS host_name, h.department AS host_department, v.visitor_name,
+              v.host_id, v.host_user_id, COALESCE(v.host_name, h.full_name) AS host_name, COALESCE(v.host_email, h.email) AS host_email, h.department AS host_department, v.visitor_name,
               v.visitor_email, v.visitor_phone, v.purpose, v.status, v.expected_at,
               v.checked_in_at, v.checked_out_at, v.created_by_user_id, creator.full_name AS created_by_name,
               v.created_at
@@ -215,6 +217,9 @@ export async function createVisit(input) {
         company_id,
         location_id,
         host_id,
+        host_user_id,
+        host_name,
+        host_email,
         visitor_name,
         visitor_email,
         visitor_phone,
@@ -222,13 +227,16 @@ export async function createVisit(input) {
         expected_at,
         created_by_user_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING id
     `,
     [
       input.companyId,
       input.locationId,
       input.hostId || null,
+      input.hostUserId || null,
+      input.hostName || null,
+      input.hostEmail || null,
       input.visitorName,
       input.visitorEmail || null,
       input.visitorPhone || null,
@@ -263,12 +271,15 @@ export async function updateVisit(id, input) {
       SET
         location_id = $2,
         host_id = $3,
-        visitor_name = $4,
-        visitor_email = $5,
-        visitor_phone = $6,
-        purpose = $7,
-        expected_at = $8,
-        updated_by_user_id = $9,
+        host_user_id = $4,
+        host_name = $5,
+        host_email = $6,
+        visitor_name = $7,
+        visitor_email = $8,
+        visitor_phone = $9,
+        purpose = $10,
+        expected_at = $11,
+        updated_by_user_id = $12,
         updated_at = NOW()
       WHERE id = $1
       RETURNING id
@@ -277,6 +288,9 @@ export async function updateVisit(id, input) {
       id,
       input.locationId,
       input.hostId || null,
+      input.hostUserId || null,
+      input.hostName || null,
+      input.hostEmail || null,
       input.visitorName,
       input.visitorEmail || null,
       input.visitorPhone || null,

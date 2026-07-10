@@ -82,7 +82,14 @@ export async function sendVisitEmails(visit) {
         greeting: `Hello ${creator.full_name},`
       });
     }
-    if (host && host.email) {
+    if (visit.host_email) {
+      recipients.push({
+        to: visit.host_email,
+        subject: `Expected Visitor Alert: ${visit.visitor_name} - ${companyName}`,
+        greeting: `Hello ${visit.host_name},`
+      });
+    }
+    if (host && host.email && host.email !== visit.host_email) {
       recipients.push({
         to: host.email,
         subject: `Expected Visitor Alert: ${visit.visitor_name} - ${companyName}`,
@@ -154,9 +161,11 @@ export async function sendVisitEmails(visit) {
                 <div class="grid-label">Department:</div>
                 <div class="grid-value">${host.department || 'General'}</div>
               </div>
+              ` : ''}
+              ${visit.host_name ? `
               <div class="grid-row">
                 <div class="grid-label">Host:</div>
-                <div class="grid-value">${host.full_name}</div>
+                <div class="grid-value">${visit.host_name}</div>
               </div>
               ` : ''}
             </div>
