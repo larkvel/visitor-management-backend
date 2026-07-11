@@ -10,7 +10,9 @@ const createCompanySchema = z.object({
   contactName: z.string().optional(),
   contactPhone: z.string().optional(),
   subscriptionPlan: z.enum(["starter", "business", "enterprise"]).optional(),
-  accountStatus: z.enum(["pending", "trial", "active", "suspended", "cancelled"]).optional()
+  accountStatus: z.enum(["pending", "trial", "active", "suspended", "cancelled"]).optional(),
+  attendanceEnabled: z.boolean().optional(),
+  payrollEnabled: z.boolean().optional()
 });
 
 export function registerCompanyRoutes(app) {

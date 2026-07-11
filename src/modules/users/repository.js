@@ -15,7 +15,7 @@ export async function listUsers(companyId) {
   const where = [];
   if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
   const result = await query(
-    `SELECT id, company_id, full_name, email, username, role, is_active, created_at
+    `SELECT id, company_id, full_name, email, username, role, is_active, created_at, biometric_id, salary_type, salary_rate, paid_leaves_limit
      FROM app_users
      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY role, full_name`,
@@ -26,7 +26,7 @@ export async function listUsers(companyId) {
 
 export async function getUser(id) {
   const result = await query(
-    `SELECT id, company_id, full_name, email, username, role, is_active, created_at FROM app_users WHERE id = $1`,
+    `SELECT id, company_id, full_name, email, username, role, is_active, created_at, biometric_id, salary_type, salary_rate, paid_leaves_limit FROM app_users WHERE id = $1`,
     [id]
   );
   if (result.rowCount === 0) throw notFound("User not found");
@@ -38,10 +38,21 @@ export async function createUser(input) {
   if (input.password) passwordHash = await bcrypt.hash(input.password, 10);
 
   const result = await query(
-    `INSERT INTO app_users (company_id, full_name, email, role, username, password_hash)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
-    [input.companyId, input.fullName, input.email, input.role, input.username || null, passwordHash]
+    `INSERT INTO app_users (company_id, full_name, email, role, username, password_hash, biometric_id, salary_type, salary_rate, paid_leaves_limit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at, biometric_id, salary_type, salary_rate, paid_leaves_limit`,
+    [
+      input.companyId, 
+      input.fullName, 
+      input.email, 
+      input.role, 
+      input.username || null, 
+      passwordHash,
+      input.biometricId || null,
+      input.salaryType || "monthly",
+      input.salaryRate || 0,
+      input.paidLeavesLimit || 1.5
+    ]
   );
   return withPermissions(result.rows[0]);
 }
@@ -59,7 +70,7 @@ export async function updateUserStatus(id, isActive) {
     `UPDATE app_users 
      SET is_active = $2 
      WHERE id = $1
-     RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at, biometric_id, salary_type, salary_rate, paid_leaves_limit`,
     [id, isActive]
   );
   if (result.rowCount === 0) throw notFound("User not found");
@@ -80,8 +91,28 @@ export async function updateUserRole(id, role) {
     `UPDATE app_users 
      SET role = $2 
      WHERE id = $1
-     RETURNING id, company_id, full_name, email, username, role, is_active, created_at`,
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at, biometric_id, salary_type, salary_rate, paid_leaves_limit`,
     [id, role]
+  );
+  if (result.rowCount === 0) throw notFound("User not found");
+  return withPermissions(result.rows[0]);
+}
+
+export async function updateUserDetails(id, input) {
+  const result = await query(
+    `UPDATE app_users 
+     SET full_name = $2, email = $3, biometric_id = $4, salary_type = $5, salary_rate = $6, paid_leaves_limit = $7 
+     WHERE id = $1
+     RETURNING id, company_id, full_name, email, username, role, is_active, created_at, biometric_id, salary_type, salary_rate, paid_leaves_limit`,
+    [
+      id,
+      input.fullName,
+      input.email,
+      input.biometricId || null,
+      input.salaryType || "monthly",
+      input.salaryRate || 0,
+      input.paidLeavesLimit || 1.5
+    ]
   );
   if (result.rowCount === 0) throw notFound("User not found");
   return withPermissions(result.rows[0]);

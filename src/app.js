@@ -6,6 +6,8 @@ import { registerAuthRoutes } from "./modules/auth/routes.js";
 import { registerCompanyRoutes } from "./modules/companies/routes.js";
 import { registerUserRoutes } from "./modules/users/routes.js";
 import { registerVisitRoutes } from "./modules/visits/routes.js";
+import { registerAttendanceRoutes } from "./modules/attendance/routes.js";
+import { registerPayrollRoutes } from "./modules/payroll/routes.js";
 
 console.log('[APP] Creating Express application...');
 
@@ -59,6 +61,12 @@ export function createApp() {
   
   registerVisitRoutes(app);
   console.log('[APP] ✓ Visit routes registered');
+
+  registerAttendanceRoutes(app);
+  console.log('[APP] ✓ Attendance routes registered');
+
+  registerPayrollRoutes(app);
+  console.log('[APP] ✓ Payroll routes registered');
 
   app.use((error, _req, res, _next) => {
     console.error('[APP] Error handler triggered:', error.message);

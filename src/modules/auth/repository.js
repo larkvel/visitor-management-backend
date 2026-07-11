@@ -12,7 +12,8 @@ export async function loginUser(username, password, subdomain) {
   const result = await query(
     `SELECT u.id, u.username, u.full_name, u.email, u.role, u.password_hash,
             u.company_id, u.is_active,
-            c.name AS company_name, c.account_status AS company_status, c.subdomain
+            c.name AS company_name, c.account_status AS company_status, c.subdomain,
+            c.attendance_enabled, c.payroll_enabled
      FROM app_users u
      LEFT JOIN companies c ON c.id = u.company_id
      WHERE u.username = $1`,
@@ -46,7 +47,15 @@ export async function loginUser(username, password, subdomain) {
   }
 
   const token = jwt.sign(
-    { userId: user.id, username: user.username, role: user.role, companyId: user.company_id, companyName: user.company_name },
+    { 
+      userId: user.id, 
+      username: user.username, 
+      role: user.role, 
+      companyId: user.company_id, 
+      companyName: user.company_name,
+      attendanceEnabled: user.attendance_enabled,
+      payrollEnabled: user.payroll_enabled
+    },
     config.jwtSecret,
     { expiresIn: "8h" }
   );
@@ -56,7 +65,9 @@ export async function loginUser(username, password, subdomain) {
     user: {
       id: user.id, username: user.username, fullName: user.full_name,
       email: user.email, role: user.role,
-      companyId: user.company_id, companyName: user.company_name, subdomain: user.subdomain
+      companyId: user.company_id, companyName: user.company_name, subdomain: user.subdomain,
+      attendanceEnabled: user.attendance_enabled,
+      payrollEnabled: user.payroll_enabled
     }
   };
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../../http.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { createUser, listUsers, updateUserStatus, deleteUser, getUser, updateUserRole } from "./repository.js";
+import { createUser, listUsers, updateUserStatus, deleteUser, getUser, updateUserRole, updateUserDetails } from "./repository.js";
 
 const createUserSchema = z.object({
   companyId: z.string().uuid(),
@@ -9,7 +9,20 @@ const createUserSchema = z.object({
   email: z.string().email(),
   role: z.enum(["company_admin", "reception", "executive", "viewer"]),
   username: z.string().min(3).max(50).optional().or(z.literal("").transform(() => undefined)),
-  password: z.string().min(8).optional().or(z.literal("").transform(() => undefined))
+  password: z.string().min(8).optional().or(z.literal("").transform(() => undefined)),
+  biometricId: z.string().optional().or(z.literal("")),
+  salaryType: z.enum(["daily", "monthly"]).optional(),
+  salaryRate: z.number().optional(),
+  paidLeavesLimit: z.number().optional()
+});
+
+const updateUserSchema = z.object({
+  fullName: z.string().min(2),
+  email: z.string().email(),
+  biometricId: z.string().optional().or(z.literal("")),
+  salaryType: z.enum(["daily", "monthly"]).optional(),
+  salaryRate: z.number().optional(),
+  paidLeavesLimit: z.number().optional()
 });
 
 export function registerUserRoutes(app) {
@@ -65,6 +78,20 @@ export function registerUserRoutes(app) {
       }
 
       res.json(await updateUserRole(req.params.id, role));
+    } catch (error) { next(error); }
+  });
+
+  app.put("/api/users/:id", requireAuth, requireRole("company_admin", "platform_admin"), async (req, res, next) => {
+    try {
+      const parsed = updateUserSchema.safeParse(req.body);
+      if (!parsed.success) throw badRequest("User details are invalid: " + parsed.error.errors.map(e => e.message).join(", "));
+      
+      const targetUser = await getUser(req.params.id);
+      if (req.user.role !== "platform_admin" && targetUser.company_id !== req.user.companyId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      res.json(await updateUserDetails(req.params.id, parsed.data));
     } catch (error) { next(error); }
   });
 
