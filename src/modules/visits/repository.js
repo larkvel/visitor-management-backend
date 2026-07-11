@@ -336,7 +336,7 @@ export async function updateVisitStatus(id, status, actorUserId) {
 }
 
 export async function getDashboard(companyId) {
-  const result = await query(
+  const statsResult = await query(
     `
       SELECT
         COUNT(*) FILTER (WHERE status = 'expected')::int AS expected,
@@ -349,7 +349,23 @@ export async function getDashboard(companyId) {
     [companyId]
   );
 
-  return result.rows[0];
+  const compResult = await query(
+    `SELECT id, name, subdomain, attendance_enabled, payroll_enabled FROM companies WHERE id = $1`,
+    [companyId]
+  );
+  
+  const company = compResult.rows[0];
+
+  return {
+    ...statsResult.rows[0],
+    company: company ? {
+      id: company.id,
+      name: company.name,
+      subdomain: company.subdomain,
+      attendanceEnabled: company.attendance_enabled,
+      payrollEnabled: company.payroll_enabled
+    } : null
+  };
 }
 
 export async function processScanCheck(id) {
