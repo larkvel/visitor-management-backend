@@ -154,3 +154,147 @@ export async function getAttendanceStats(companyId) {
     late
   };
 }
+
+// ── Leave Requests ────────────────────────────────────────
+
+export async function createLeaveRequest(companyId, userId, input) {
+  const from = new Date(input.fromDate);
+  const to   = new Date(input.toDate);
+  if (isNaN(from) || isNaN(to) || to < from) {
+    throw { statusCode: 400, message: "Invalid date range" };
+  }
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const daysCount = Number(((to - from) / msPerDay + 1).toFixed(2));
+
+  const result = await query(
+    `INSERT INTO leave_requests
+       (company_id, user_id, leave_type, from_date, to_date, days_count, reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [companyId, userId, input.leaveType || "casual", input.fromDate, input.toDate, daysCount, input.reason || null]
+  );
+  return result.rows[0];
+}
+
+export async function listLeaveRequests(companyId, userId) {
+  const params = [companyId];
+  let userFilter = "";
+  if (userId) {
+    params.push(userId);
+    userFilter = `AND lr.user_id = $${params.length}`;
+  }
+
+  const result = await query(
+    `SELECT lr.*, 
+            u.full_name AS employee_name, u.email AS employee_email,
+            r.full_name AS reviewer_name
+     FROM leave_requests lr
+     JOIN app_users u ON u.id = lr.user_id
+     LEFT JOIN app_users r ON r.id = lr.reviewed_by
+     WHERE lr.company_id = $1 ${userFilter}
+     ORDER BY lr.created_at DESC`,
+    params
+  );
+  return result.rows;
+}
+
+export async function updateLeaveRequestStatus(requestId, status, reviewedBy) {
+  const result = await query(
+    `UPDATE leave_requests
+     SET status = $2, reviewed_by = $3, reviewed_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [requestId, status, reviewedBy]
+  );
+  if (result.rowCount === 0) throw { statusCode: 404, message: "Leave request not found" };
+  return result.rows[0];
+}
+
+// Employee personal monthly attendance summary
+export async function getEmployeeAttendanceSummary(userId, companyId) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endDate = new Date(year, month, 0).toISOString().split("T")[0]; // last day of month
+
+  // Daily punch summary for the month
+  const punchResult = await query(
+    `SELECT 
+       al.punched_at::date AS punch_date,
+       MIN(al.punched_at) FILTER (WHERE al.punch_type = 'IN') AS first_in,
+       MAX(al.punched_at) FILTER (WHERE al.punch_type = 'OUT') AS last_out
+     FROM attendance_logs al
+     WHERE al.user_id = $1 AND al.company_id = $2
+       AND al.punched_at::date BETWEEN $3 AND $4
+     GROUP BY al.punched_at::date
+     ORDER BY punch_date DESC`,
+    [userId, companyId, startDate, endDate]
+  );
+
+  const dailyLogs = punchResult.rows.map(row => {
+    let hoursWorked = 0;
+    if (row.first_in && row.last_out) {
+      const diff = new Date(row.last_out) - new Date(row.first_in);
+      if (diff > 0) hoursWorked = Number((diff / (1000 * 60 * 60)).toFixed(2));
+    }
+    return { ...row, hoursWorked };
+  });
+
+  const presentDays = dailyLogs.length;
+  // Working days in month (Mon-Fri)
+  let workingDays = 0;
+  const d = new Date(startDate);
+  const endD = new Date(endDate);
+  while (d <= endD) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) workingDays++;
+    d.setDate(d.getDate() + 1);
+  }
+  const absentDays = Math.max(0, workingDays - presentDays);
+  const totalHours = dailyLogs.reduce((sum, r) => sum + r.hoursWorked, 0);
+
+  // Leave balance from user record
+  const userResult = await query(
+    `SELECT paid_leaves_limit FROM app_users WHERE id = $1`,
+    [userId]
+  );
+  const monthlyLeaveQuota = Number(userResult.rows[0]?.paid_leaves_limit || 1.5);
+
+  // Approved leaves this month
+  const approvedLeaves = await query(
+    `SELECT COALESCE(SUM(days_count), 0)::numeric AS total_approved,
+            COALESCE(SUM(days_count) FILTER (WHERE leave_type = 'casual'), 0)::numeric AS casual_used,
+            COALESCE(SUM(days_count) FILTER (WHERE leave_type = 'sick'), 0)::numeric AS sick_used,
+            COALESCE(SUM(days_count) FILTER (WHERE leave_type = 'unpaid'), 0)::numeric AS unpaid_used
+     FROM leave_requests
+     WHERE user_id = $1 AND status = 'approved'
+       AND from_date BETWEEN $2 AND $3`,
+    [userId, startDate, endDate]
+  );
+  const leaveStats = approvedLeaves.rows[0];
+
+  // Pending leaves
+  const pendingResult = await query(
+    `SELECT COUNT(*)::int AS pending FROM leave_requests WHERE user_id = $1 AND status = 'pending'`,
+    [userId]
+  );
+
+  return {
+    month: `${year}-${String(month).padStart(2, "0")}`,
+    presentDays,
+    absentDays,
+    workingDays,
+    totalHours: Number(totalHours.toFixed(2)),
+    dailyLogs,
+    leaveBalance: {
+      monthlyQuota: monthlyLeaveQuota,
+      casualUsed: Number(leaveStats.casual_used),
+      sickUsed: Number(leaveStats.sick_used),
+      unpaidUsed: Number(leaveStats.unpaid_used),
+      remaining: Number((monthlyLeaveQuota - Number(leaveStats.total_approved)).toFixed(2))
+    },
+    pendingLeaves: pendingResult.rows[0]?.pending || 0
+  };
+}
+
