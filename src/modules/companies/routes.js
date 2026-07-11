@@ -29,7 +29,10 @@ export function registerCompanyRoutes(app) {
   });
 
   app.post("/api/admin/companies/:companyId/approve", requireAuth, requireRole("platform_admin"), async (req, res, next) => {
-    try { res.json(await approveCompany(req.params.companyId)); } catch (e) { next(e); }
+    try {
+      const { attendanceEnabled, payrollEnabled } = req.body;
+      res.json(await approveCompany(req.params.companyId, attendanceEnabled, payrollEnabled));
+    } catch (e) { next(e); }
   });
 
   app.get("/api/companies/by-subdomain/:subdomain", async (req, res, next) => {

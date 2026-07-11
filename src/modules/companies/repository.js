@@ -37,10 +37,15 @@ export async function listPendingCompanies() {
   return result.rows;
 }
 
-export async function approveCompany(companyId) {
+export async function approveCompany(companyId, attendanceEnabled = false, payrollEnabled = false) {
   const compResult = await query(
-    `UPDATE companies SET account_status = 'active' WHERE id = $1 RETURNING *`,
-    [companyId]
+    `UPDATE companies 
+     SET account_status = 'active', 
+         attendance_enabled = $2, 
+         payroll_enabled = $3 
+     WHERE id = $1 
+     RETURNING *`,
+    [companyId, attendanceEnabled, payrollEnabled]
   );
   if (!compResult.rows[0]) throw notFound("Company not found");
   const company = compResult.rows[0];
